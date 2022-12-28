@@ -1,0 +1,369 @@
+---
+title: "Food Supply in East Asia"
+author: "LIN, Yu-Chen"
+date: '2021-01-15'
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Abstract
+
+As the COVID-19 pandemic continues, we have seen how the global food supply chain is easily susceptible to shocks brought by the pandemic. To contribute in efforts to prevent the same occurrence in the future, I decided to examine the vulnerability of global food trade in East Asia to external shocks. To determine this, I have used degree centrality to the weighted network graph of the food supply chain of East Asia and its trading partners for staple foods such as rice, corn, meat and fish. Based on this project’s findings, the food supply chain of East Asia in general is less vulnerable to external shocks given its diverse source of food supply. However, vulnerabilities to external shocks were found in the region’s meat and rice supplies.
+
+
+## Background
+
+The COVID pandemic has been heavily wearing down the global economy since its outburst one year ago. Food supply, which is one of the largest and most essential sectors of the global economy, has also seen great disruption in the whole supply chain starting from farm production, food production, transport and logistics to the final demand (OECD, 2020). The global economy has been faced with several food crises in the past, but the challenges put on the food supply chain caused by the COVID pandemic were unprecedented. With the sudden outburst of the coronavirus, the global food supply chain was unable to react to the huge shocks, policy and demand changes, and lockdowns with a quick response (Aday & Aday, 2020). These circumstances could most possibly occur when there is an overdependence on merely few countries in the global food supply chain.  
+
+## Research Questions
+
+In this project, I will examine the vulnerability of global food supply chains of East Asia to external shows. To do this, I will determine the most important exporter to East Asia using Weighted Edge Betweenness Centrality. 
+As we have witnessed during the beginning of the COVID-19 pandemic, it is important for countries to reduce dependence on just one country for their food supply since a disruption could threaten the food security of the entire country. Thus, by pinpointing major exporters in East Asia, countries will be able to diversify and reduce dependence on these exporters. 
+This study will help policy makers in crafting policies to ensure food security in the region and improve resiliency of the food supply to external shocks. 
+
+
+## Dataset
+The datasets were acquired from UN Comtrade Database (2019) and Olteanu (2020). From the UN Comtrade database, I extracted import data to East Asian countries, namely China, Japan, South Korea, and Mongolia. Only import data of staple foods, particularly corn, rice, meat, and fish, were extracted from the UN Comtrade database. 
+
+The database from UN Comtrade contains the following information: ISO Code of Partner Country (Exporter), ISO Code of Reporting Country (Importer), HS Classification, Period, Commodity and Commodity Code, Quantity in kilograms, trade values in US dollars, etc. The number of columns in the database sum up to 35 columns; however, only four columns from the database were used for this project. The data that were used are ISO Code of Partner Country, ISO Code of Reporting Country, Commodity, and Trade Value in US dollars. 
+
+In the network graph, the nodes represent the 82 countries in the dataset that are exporting to East Asia including countries from the said region. On the other hand, the edges are weighted on the amount of goods imported to East Asian countries in US dollars. The number of nodes and edges for each graph is indicated beside the network graph below. 
+
+Meanwhile, the datasets containing the regional classification of each country indicated in 3-letter ISO codes were extracted from Olteanu (2019) in Kaggle. 
+
+## Network Figure
+
+The figure below represents the food supply network of East Asia based on rice, corn, meat, fish, and a combined amount of these four staple foods. Edges that are colored yellow represents the edges that are part of the top 10% in terms of trade amount. On the other hand, the edges that are colored gray are below top 10% in terms of trade amount. 
+
+### Food Supply Chain of East Asia (83 nodes & 172 edges)
+
+```{r, warning=FALSE, message = FALSE, fig.width=10, fig.height=10, fig.cap="Figure 1. Food Trade Network to East Asia"}
+library(igraph)
+library(dplyr)
+library(tidyr)
+comtrade <- read.csv("comtrade (5).csv") %>%
+  select(Reporter.ISO, Partner.ISO, Commodity, Trade.Value..US..)
+comtrade <- drop_na(comtrade)
+
+
+#Aggregate Food Trade Network
+comtrade_agg <- aggregate(Trade.Value..US..~ Reporter.ISO + Partner.ISO, data = comtrade, FUN = sum) %>%
+  filter(Partner.ISO != "WLD")
+
+#Remove Empty Rows
+comtrade_agg <- comtrade_agg[c(-1,-2,-3,-4),]
+continents <- read.csv("continents2.csv") %>%
+  select(alpha.3, region)
+
+agg.node.r <- as.character(unique(comtrade_agg$Reporter.ISO))
+agg.node.p <- as.character(unique(comtrade_agg$Partner.ISO))
+agg.nodes <- as.data.frame(unique(c(agg.node.r, agg.node.p)))
+colnames(agg.nodes)[1] <- "Country"
+agg.nodes <- merge(agg.nodes, continents, by.x = "Country", by.y = "alpha.3") 
+agg.nodes$region <- as.character(agg.nodes$region)
+agg.nodes$region[agg.nodes$Country == "JPN" | agg.nodes$Country == "CHN" | agg.nodes$Country == "KOR" | agg.nodes$Country == "MNG"] <- "East Asia"
+agg.nodes$region[agg.nodes$region == "Asia"] <- "Other Asia"
+agg.nodes$region <- as.factor(agg.nodes$region)
+
+agg.edges <- data.frame(from=comtrade_agg$Partner.ISO, to=comtrade_agg$Reporter.ISO)
+agg.edges <- agg.edges[!(is.na(agg.edges$from) | agg.edges$from==""), ] %>%
+  filter(from != "WLD")
+aggtrade_g <- graph.data.frame(agg.edges, directed = TRUE, vertices = unique(agg.nodes))
+comtrade_agg$Trade.Value..US.. <- log(comtrade_agg$Trade.Value..US..)
+edge.attributes(aggtrade_g)$weight <- comtrade_agg$Trade.Value..US..
+E(aggtrade_g)$weight <- comtrade_agg$Trade.Value..US..
+
+aggtrade_g <- set.edge.attribute(aggtrade_g, "weight", index = E(aggtrade_g), comtrade_agg$Trade.Value..US..)
+#remove isolated data
+agg.isolate = which(degree(aggtrade_g)==0)
+aggtrade_g = delete.vertices(aggtrade_g, agg.isolate)
+
+#color plot
+library("RColorBrewer")
+col <- c("#f94144", "#f3722c", "#4ecdc4", "#f9c74f", "#f8961e", "#90be6d")
+my_color.agg <- col[as.numeric(as.factor(V(aggtrade_g)$region))]
+top90_agg <- quantile(E(aggtrade_g)$weight, 0.90)
+E(aggtrade_g)$color[E(aggtrade_g)$weight >= top90_agg] <- "#ffe66d"
+E(aggtrade_g)$color[E(aggtrade_g)$weight <= top90_agg] <- adjustcolor("gray", alpha.f = 0.3)
+V(aggtrade_g)$shape[V(aggtrade_g)$region == "East Asia"] <- "square"
+V(aggtrade_g)$shape[V(aggtrade_g)$region != "East Asia"] <- "circle"
+l <- layout_with_dh(aggtrade_g)
+plot(aggtrade_g, vertex.color = my_color.agg, vertex.frame.color = NA, layout = l, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.08*E(aggtrade_g)$weight, vertex.size=10, vertex.label.cex=0.8, edge.width= 0.2*E(aggtrade_g)$weight, fig.width = 300, main = "Food Trade Network to East Asia")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+### Rice Trade Network to East Asia (83 nodes & 172 edges)
+```{r, general, warning=FALSE, fig.width=10, fig.height=10, fig.cap="Figure 2. Rice Trade Network to East Asia"}
+#Rice Trade Network
+rice_trade <- comtrade[grepl("rice", comtrade$Commodity, ignore.case = TRUE),] %>%
+  filter(Partner.ISO != "WLD")
+rice_trade <- rice_trade[!(is.na(rice_trade$Partner.ISO) | rice_trade$Partner.ISO==""), ]
+
+node.r <- as.character(unique(rice_trade$Reporter.ISO))
+node.p <- as.character(unique(rice_trade$Partner.ISO))
+nodes <- as.data.frame(unique(c(node.r, node.p)))
+colnames(nodes)[1] <- "Country"
+nodes <- merge(nodes, continents, by.x = "Country", by.y = "alpha.3") 
+nodes$region <- as.character(nodes$region)
+nodes$region[nodes$Country == "JPN" | nodes$Country == "CHN" | nodes$Country == "KOR" | nodes$Country == "MNG"] <- "East Asia"
+nodes$region[nodes$region == "Asia"] <- "Other Asia"
+nodes$region <- as.factor(nodes$region)
+
+edges <- data.frame(from=rice_trade$Partner.ISO, to=rice_trade$Reporter.ISO)
+edges <- edges[!(is.na(edges$from) | edges$from==""), ] %>%
+  filter(from != "WLD")
+ricetrade_g <- graph.data.frame(edges, directed = TRUE, vertices = unique(nodes))
+rice_trade$Trade.Value..US.. <- log(rice_trade$Trade.Value..US..)
+edge.attributes(ricetrade_g)$weight <- rice_trade$Trade.Value..US..
+E(ricetrade_g)$weight <- rice_trade$Trade.Value..US..
+
+ricetrade_g <- set.edge.attribute(ricetrade_g, "weight", index = E(ricetrade_g), rice_trade$Trade.Value..US..)
+#remove isolated data
+isolate = which(degree(ricetrade_g)==0)
+ricetrade_g = delete.vertices(ricetrade_g, isolate)
+
+#color plot
+library("RColorBrewer")
+col <- c("#f94144", "#f3722c", "#4ecdc4", "#f9c74f", "#f8961e", "#90be6d")
+my_color <- col[as.numeric(as.factor(V(ricetrade_g)$region))]
+top90_rice <- quantile(E(ricetrade_g)$weight, 0.90)
+E(ricetrade_g)$color[E(ricetrade_g)$weight >= top90_rice] <- "#ffe66d"
+E(ricetrade_g)$color[E(ricetrade_g)$weight <= top90_rice] <- adjustcolor("gray", alpha.f = 0.3)
+V(ricetrade_g)$shape[V(ricetrade_g)$region == "East Asia"] <- "square"
+V(ricetrade_g)$shape[V(ricetrade_g)$region != "East Asia"] <- "circle"
+l <- layout_with_dh(ricetrade_g)
+plot(ricetrade_g, vertex.color = my_color, vertex.frame.color = NA, layout = l, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.05*E(ricetrade_g)$weight, vertex.size=10, vertex.label.cex=0.8, edge.width= 0.2*E(ricetrade_g)$weight, fig.width = 300, main = "Rice Trade Network to East Asia")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+### Meat Trade Network to East Asia (56 nodes & 123 edges)
+
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.cap="Figure 3. Meat Trade Network to East Asia"}
+#Meat Trade Network
+meat_trade <- comtrade[grepl("meat", comtrade$Commodity, ignore.case = TRUE),] %>%
+  filter(Partner.ISO != "WLD")
+meat_trade <- meat_trade[!(is.na(meat_trade$Partner.ISO) | meat_trade$Partner.ISO==""), ]
+
+meat.node.r <- as.character(unique(meat_trade$Reporter.ISO))
+meat.node.p <- as.character(unique(meat_trade$Partner.ISO))
+meat.nodes <- as.data.frame(unique(c(meat.node.r, meat.node.p)))
+colnames(meat.nodes)[1] <- "Country"
+meat.nodes <- merge(meat.nodes, continents, by.x = "Country", by.y = "alpha.3") 
+meat.nodes$region <- as.character(meat.nodes$region)
+meat.nodes$region[meat.nodes$Country == "JPN" | meat.nodes$Country == "CHN" | meat.nodes$Country == "KOR" | meat.nodes$Country == "MNG"] <- "East Asia"
+meat.nodes$region[meat.nodes$region == "Asia"] <- "Other Asia"
+meat.nodes$region <- as.factor(meat.nodes$region)
+
+meat.edges <- data.frame(from=meat_trade$Partner.ISO, to=meat_trade$Reporter.ISO)
+meat.edges <- meat.edges[!(is.na(meat.edges$from) | meat.edges$from==""), ] %>%
+  filter(from != "WLD")
+meattrade_g <- graph.data.frame(meat.edges, directed = TRUE, vertices = unique(meat.nodes))
+meat_trade$Trade.Value..US.. <- log(meat_trade$Trade.Value..US..)
+edge.attributes(meattrade_g)$weight <- meat_trade$Trade.Value..US..
+E(meattrade_g)$weight <- meat_trade$Trade.Value..US..
+
+meattrade_g <- set.edge.attribute(meattrade_g, "weight", index = E(meattrade_g), meat_trade$Trade.Value..US..)
+
+#remove isolated data
+meat.isolate = which(degree(meattrade_g)==0)
+meattrade_g = delete.vertices(meattrade_g, meat.isolate)
+
+#color plot
+library("RColorBrewer")
+my_color.meat <- col[as.numeric(as.factor(V(meattrade_g)$region))]
+top90_meat <- quantile(E(meattrade_g)$weight, 0.90)
+E(meattrade_g)$color[E(meattrade_g)$weight >= top90_meat] <- "#ffe66d"
+E(meattrade_g)$color[E(meattrade_g)$weight <= top90_meat] <- adjustcolor("gray", alpha.f = 0.3)
+V(meattrade_g)$shape[V(meattrade_g)$region == "East Asia"] <- "square"
+V(meattrade_g)$shape[V(meattrade_g)$region != "East Asia"] <- "circle"
+l <- layout_with_dh(meattrade_g)
+plot(meattrade_g, vertex.color = my_color.meat, vertex.frame.color = NA, layout = l, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.08*E(meattrade_g)$weight, vertex.size=10, vertex.label.cex=0.8, edge.width= 0.2*E(meattrade_g)$weight, fig.width = 300, main = "Meat Trade Network to East Asia")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+### Corn Trade Network to East Asia (46 nodes & 81 edges)
+
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.cap="Figure 4. Corn Trade Network to East Asia"}
+#Corn Trade Network
+corn_trade <- comtrade[grepl("corn", comtrade$Commodity, ignore.case = TRUE),] %>%
+  filter(Partner.ISO != "WLD")
+corn_trade <- corn_trade[!(is.na(corn_trade$Partner.ISO) | corn_trade$Partner.ISO==""), ]
+
+corn.node.r <- as.character(unique(corn_trade$Reporter.ISO))
+corn.node.p <- as.character(unique(corn_trade$Partner.ISO))
+corn.nodes <- as.data.frame(unique(c(corn.node.r, corn.node.p)))
+colnames(corn.nodes)[1] <- "Country"
+corn.nodes <- merge(corn.nodes, continents, by.x = "Country", by.y = "alpha.3") 
+corn.nodes$region <- as.character(corn.nodes$region)
+corn.nodes$region[corn.nodes$Country == "JPN" | corn.nodes$Country == "CHN" | corn.nodes$Country == "KOR" | corn.nodes$Country == "MNG"] <- "East Asia"
+corn.nodes$region[corn.nodes$region == "Asia"] <- "Other Asia"
+corn.nodes$region <- as.factor(corn.nodes$region)
+
+corn.edges <- data.frame(from=corn_trade$Partner.ISO, to=corn_trade$Reporter.ISO)
+corn.edges <- corn.edges[!(is.na(corn.edges$from) | corn.edges$from==""), ] %>%
+  filter(from != "WLD")
+corntrade_g <- graph.data.frame(corn.edges, directed = TRUE, vertices = unique(corn.nodes))
+corn_trade$Trade.Value..US.. <- log(corn_trade$Trade.Value..US..)
+edge.attributes(corntrade_g)$weight <- corn_trade$Trade.Value..US..
+E(corntrade_g)$weight <- corn_trade$Trade.Value..US..
+
+corntrade_g <- set.edge.attribute(corntrade_g, "weight", index = E(corntrade_g), corn_trade$Trade.Value..US..)
+
+#remove isolated data
+corn.isolate = which(degree(corntrade_g)==0)
+corntrade_g = delete.vertices(corntrade_g, corn.isolate)
+
+#color plot
+library("RColorBrewer")
+my_color.corn <- col[as.numeric(as.factor(V(corntrade_g)$region))]
+top90_corn <- quantile(E(corntrade_g)$weight, 0.90)
+E(corntrade_g)$color[E(corntrade_g)$weight >= top90_corn] <- "#ffe66d"
+E(corntrade_g)$color[E(corntrade_g)$weight <= top90_corn] <- adjustcolor("gray", alpha.f = 0.3)
+V(corntrade_g)$shape[V(corntrade_g)$region == "East Asia"] <- "square"
+V(corntrade_g)$shape[V(corntrade_g)$region != "East Asia"] <- "circle"
+l <- layout_with_dh(corntrade_g)
+plot(corntrade_g, vertex.color = my_color.corn, vertex.frame.color = NA, layout = l, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.08*E(corntrade_g)$weight, vertex.size=10, vertex.label.cex=0.8, edge.width= 0.2*E(corntrade_g)$weight, fig.width = 300, main = "Corn Trade Network to East Asia")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+### Fish Trade Network to East Asia (53 nodes & 93 edges)
+
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.cap="Figure 5. Fish Trade Network to East Asia"}
+#Fish Trade Network
+fish_trade <- comtrade[grepl("fish", comtrade$Commodity, ignore.case = TRUE),] %>%
+  filter(Partner.ISO != "WLD")
+fish_trade <- fish_trade[!(is.na(fish_trade$Partner.ISO) | fish_trade$Partner.ISO==""), ]
+
+fish.node.r <- as.character(unique(fish_trade$Reporter.ISO))
+fish.node.p <- as.character(unique(fish_trade$Partner.ISO))
+fish.nodes <- as.data.frame(unique(c(fish.node.r, fish.node.p)))
+colnames(fish.nodes)[1] <- "Country"
+fish.nodes <- merge(fish.nodes, continents, by.x = "Country", by.y = "alpha.3") 
+fish.nodes$region <- as.character(fish.nodes$region)
+fish.nodes$region[fish.nodes$Country == "JPN" | fish.nodes$Country == "CHN" | fish.nodes$Country == "KOR" | fish.nodes$Country == "MNG"] <- "East Asia"
+fish.nodes$region[fish.nodes$region == "Asia"] <- "Other Asia"
+fish.nodes$region <- as.factor(fish.nodes$region)
+
+fish.edges <- data.frame(from=fish_trade$Partner.ISO, to=fish_trade$Reporter.ISO)
+fish.edges <- fish.edges[!(is.na(fish.edges$from) | fish.edges$from==""), ] %>%
+  filter(from != "WLD")
+fishtrade_g <- graph.data.frame(fish.edges, directed = TRUE, vertices = unique(fish.nodes))
+fish_trade$Trade.Value..US.. <- log(fish_trade$Trade.Value..US..)
+edge.attributes(fishtrade_g)$weight <- fish_trade$Trade.Value..US..
+E(fishtrade_g)$weight <- fish_trade$Trade.Value..US..
+
+fishtrade_g <- set.edge.attribute(fishtrade_g, "weight", index = E(fishtrade_g), fish_trade$Trade.Value..US..)
+
+#remove isolated data
+fish.isolate = which(degree(fishtrade_g)==0)
+fishtrade_g = delete.vertices(fishtrade_g, fish.isolate)
+
+#color plot
+library("RColorBrewer")
+my_color.fish <- col[as.numeric(as.factor(V(fishtrade_g)$region))]
+top90_fish <- quantile(E(fishtrade_g)$weight, 0.90)
+E(fishtrade_g)$color[E(fishtrade_g)$weight >= top90_fish] <- "#ffe66d"
+E(fishtrade_g)$color[E(fishtrade_g)$weight <= top90_fish] <- adjustcolor("gray", alpha.f = 0.3)
+V(fishtrade_g)$shape[V(fishtrade_g)$region == "East Asia"] <- "square"
+V(fishtrade_g)$shape[V(fishtrade_g)$region != "East Asia"] <- "circle"
+l <- layout_with_dh(fishtrade_g)
+plot(fishtrade_g, vertex.color = my_color.fish, vertex.frame.color = NA, layout = l, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.08*E(fishtrade_g)$weight, vertex.size=10, vertex.label.cex=0.8, edge.width= 0.2*E(fishtrade_g)$weight, fig.width = 300, main = "Fish Trade Network to East Asia")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+## Method
+
+A weighted Degree Centrality is used in this research. With the weighted degree centrality, the nodes with the most connections to other nodes and the highest amount of trade flows will have higher value and importance which will be reflected in size in the graph. The concept of weighted degree centrality fits the concept of our research as the nodes with higher value are the countries that the East Asian food supply chain depends more on trade amounts and connections.
+
+$$
+\begin{equation}
+C_D(j) = \sum_{j= 1}^{n}A_{ij}w_{ij}
+\end{equation}
+$$
+
+## Results
+
+### Weighted Degree Centrality - Food Trade Network of East Asia
+
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.fullwidth = TRUE, fig.cap="Figure 6. Food Trade Network of East Asia (vertex size adjust based on the Weighted Degree Centrality)"}
+#Rice
+sc.agg <- strength(aggtrade_g, vids = V(aggtrade_g), mode = c("out"), weights = E(aggtrade_g)$weight)
+lca.agg <- layout_with_graphopt(aggtrade_g, charge = 1)
+plot(aggtrade_g, vertex.color = my_color.agg, vertex.frame.color = NA, layout = lca.agg, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.08*E(aggtrade_g)$weight, vertex.size=sc.agg/3, vertex.label.cex=0.8, edge.width= 0.2*E(aggtrade_g)$weight, fig.width = 300, main = "Food Trade Network to East Asia (Weighted Degree Centrality)")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+### Weighted Degree Centrality - Rice Trade Network of East Asia
+
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.fullwidth = TRUE, fig.cap="Figure 7. Rice Trade Network of East Asia (vertex size adjusted based on the Weighted Degree Centrality)"}
+#Rice
+sc.rice <- strength(ricetrade_g, vids = V(ricetrade_g), mode = c("out"), weights = E(ricetrade_g)$weight)
+lca.rice <- layout_with_graphopt(ricetrade_g, charge = 1)
+plot(ricetrade_g, vertex.color = my_color, vertex.frame.color = NA, layout = lca.rice, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.05*E(ricetrade_g)$weight, vertex.size=sc.rice/3, vertex.label.cex=0.8, edge.width= 0.2*E(ricetrade_g)$weight, fig.width = 300, main = "Rice Trade Network to East Asia (Weighted Degree Centrality)")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+### Weighted Degree Centrality - Meat Trade Network of East Asia
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.fullwidth = TRUE, fig.cap="Figure 8. Meat Trade Network of East Asia (vertex size adjusted based on the Weighted Degree Centrality)"}
+#Meat
+sc.meat <- strength(meattrade_g, vids = V(meattrade_g), mode = c("out"), weights = E(meattrade_g)$weight)
+deg.meat <- degree(meattrade_g, v = V(meattrade_g), mode = "out", normalized = TRUE)
+lca.meat <- layout_with_graphopt(meattrade_g, charge = 1)
+plot(meattrade_g, vertex.color = my_color.meat, vertex.frame.color = NA, layout = lca.meat, vertex.label.family = "sans", curved = 1,edge.arrow.size=0.05*E(meattrade_g)$weight, vertex.size=sc.meat/3, vertex.label.cex=0.8, edge.width= 0.2*E(meattrade_g)$weight, fig.width = 300, main = "Meat Trade Network to East Asia (Weighted Degree Centrality)")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+### Weighted Degree Centrality - Corn Trade Network of East Asia
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.fullwidth = TRUE, fig.cap="Figure 9. Corn Trade Network of East Asia (vertex size adjusted based on the Weighted Degree Centrality)"}
+#Corn
+sc.corn <- strength(corntrade_g, vids = V(corntrade_g), mode = c("out"), weights = E(corntrade_g)$weight)
+lca.corn <- layout_with_graphopt(corntrade_g, charge = 1)
+plot(corntrade_g, vertex.color = my_color.corn, vertex.frame.color = NA, layout = lca.corn, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.05*E(corntrade_g)$weight, vertex.size=sc.corn/3, vertex.label.cex=0.8, edge.width= 0.2*E(corntrade_g)$weight, fig.width = 300, main = "Corn Trade Network to East Asia (Weighted Degree Centrality)")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+### Weighted Degree Centrality - Fish Trade Network of East Asia
+```{r, warning=FALSE, fig.width=10, fig.height=10, fig.fullwidth = TRUE, fig.cap="Figure 10. Fish Trade Network of East Asia (vertex size adjusted based on the Weighted Degree Centrality)"}
+#Fish
+sc.fish <- strength(fishtrade_g, vids = V(fishtrade_g), mode = c("out"), weights = E(fishtrade_g)$weight)
+lca.fish <- layout_with_graphopt(fishtrade_g, charge = 1)
+plot(fishtrade_g, vertex.color = my_color.fish, vertex.frame.color = NA, layout = lca.fish, vertex.label.family = "sans", curved = 1,
+     edge.arrow.size=0.05*E(fishtrade_g)$weight, vertex.size=sc.fish/3, vertex.label.cex=0.8, edge.width= 0.2*E(fishtrade_g)$weight, fig.width = 300, main = "Fish Trade Network to East Asia (Weighted Degree Centrality)")
+legend("bottomleft", c("Africa", "Americas", "East Asia", "Europe", "Oceania", "Other Asia"), pch=21, col="#777777", pt.bg=col, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+## Discussion
+
+Based on Figure 6, it can be seen that East Asian countries in general depend on European and other Asian countries. In the same figure, there also seems to be an active food trade between East Asian countries with China leading as its regional partner. Mongolia, however, seems to have a low participation in the food trade within the region. Overall, we can see in this graph that East Asia has a pretty diverse food trading partner and thus the impact of an external shock can be assumed to be relatively low.
+
+Digging deeper into the data, Figure 7 represents the rice trade network in the region. Based on the figure, China holds a relatively important position in the intra-regional rice trading. Most of the trading partners of East Asian countries are based in Asia, and few partners around Americas and Europe. Given that China and Japan also imports from other Asian countries like Thailand and Vietnam and exports to other East Asian countries, there seems to be no overdependence to their local rice supply nor to other trading partners. South Korea and Mongolia and South Korea seem to play a less prominent role in the intra-regional rice trade. Overall, the rice supply mainly comes from Asia; hence, diversification in the rice supply source could be beneficial to improve its resiliency from external shocks, particularly in Asia.
+
+Figure 8 represents the meat trade network of East Asia. Within East Asia, the three countries, China, Japan, and Korea all play an important role in terms of intra-regional trade. Compared to rice, there are more countries exporting meat to East Asia, and thus the food supply for meat in the region is diverse in terms of its source. However, in terms of trade volume, there is not enough diversification. The region mostly depends on Australia, New Zealand, United States, and Canada for its meat products. There are few other trading partners for meats, but most of them have negligible amounts traded compared to the aforementioned countries. Therefore, a shock in these countries could have a devastating effect on the meat supply chain in the region.
+
+Similarly, the corn trade network of East Asia also seems to be highly dependent on countries in the Americas such as the United States, Brazil, Argentina, and Chile. Major corn exporters in East Asia also exist in Europe with Russia leading in the region. Within East Asia, China leads the intra-regional trade; however, even China’s exports are comparatively lower to other trading partners of East Asian countries. There are few corn being exported within the region in Japan and South Korea; and in Mongolia, this is virtually zero. In general, corn supply in Asia seems to be relatively diverse in terms of its source compared to the first two goods.
+
+Last but not the least, the fish trade network of East Asia is relatively not dependent on other  regions. It can be seen that East Asia still receives considerable exports from foreign regions such as Norway, Great Britain, and Australia. Nonetheless, the intra-regional fish trades between China, Japan, and Korea is considerably high as we can see that Japan -> China, Korea-> Japan, and Korea -> China are all among the top 10% in terms of trading amount. 
+Moreover, there are a lot of fish trading partners for East Asia, where there doesn’t exist a country that is particularly crucial in the trading network. The fish trading network is well-decentralized and will be able to face shocks.
+
+## References
+
+United Nations. (2019). UN Comtrade Database. Retrieved January 15, 2021, from https://comtrade.un.org/data/
+<br />
+
+OECD. (2020, June). Food Supply Chains and COVID-19: Impacts and Policy Lessons. Retrieved January 15, 2021, from https://read.oecd-ilibrary.org/view/?ref=134_134305-ybqvdf0kg9&title=Food-Supply-Chains-and-COVID-19-Impacts-and-policy-lessons
+<br />
+
+Olteanu A. (2020). Country Mapping - ISO, Continent, Region. Retrieved January 15, 2021, from https://www.kaggle.com/andradaolteanu/country-mapping-iso-continent-region
+<br />
+
